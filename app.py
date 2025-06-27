@@ -10,6 +10,12 @@ from forecast_utils import (
 st.set_page_config(page_title="📊 Smart Sales Forecast App", layout="wide")
 st.title("📊 Smart Sales Forecast & Target Tracker")
 
+# Initialize session state
+if 'forecast_ran' not in st.session_state:
+    st.session_state.forecast_ran = False
+if 'show_charts' not in st.session_state:
+    st.session_state.show_charts = False
+
 uploaded_file = st.file_uploader("📤 Upload Sales File (CSV or Excel)", type=["csv", "xlsx"])
 
 if uploaded_file:
@@ -32,27 +38,48 @@ if uploaded_file:
     seasonal_effect = st.radio("📅 Any Special Seasonal Effects?", ["No", "Yes"])
     seasonal_dates = None
     if seasonal_effect == "Yes":
-        st.warning("📌 Note: Data in selected dates may be treated as outliers or amplified.")
-        seasonal_dates = st.date_input("Select special event dates", [], help="Like Eid, festivals, etc.")
+        st.warning("📌 Note: Dates selected will be considered high impact.")
+        seasonal_dates = st.date_input("Select seasonal dates", [])
 
     target_mode = st.radio("🎯 Target Period", ["Monthly", "Yearly"], horizontal=True)
     target_value = st.number_input("🔢 Enter Your Sales Target", step=1000)
 
+    # Run Forecast Button
     if st.button("🚀 Run Forecast"):
         forecast_df, last_data_date, days_left = forecast_sales(df_clean, model_choice, target_mode)
-        metrics = calculate_target_analysis(df_clean, forecast_df, last_data_date, target_value, target_mode)
+        st.session_state.forecast_df = forecast_df
+        st.session_state.df_clean = df_clean
+        st.session_state.last_data_date = last_data_date
+        st.session_state.target_value = target_value
+        st.session_state.target_mode = target_mode
+        st.session_state.forecast_ran = True
+        st.session_state.show_charts = False
 
+    if st.session_state.forecast_ran:
         st.subheader("📌 Target Analysis")
+        metrics = calculate_target_analysis(
+            st.session_state.df_clean,
+            st.session_state.forecast_df,
+            st.session_state.last_data_date,
+            st.session_state.target_value,
+            st.session_state.target_mode
+        )
+
         for k, v in metrics.items():
             st.metric(label=k, value=v)
 
         st.success(generate_recommendations(metrics))
 
+        # Charts Button
         if st.button("📈 Show Charts and Table"):
-            st.plotly_chart(plot_forecast(forecast_df), use_container_width=True)
-            st.plotly_chart(plot_actual_vs_forecast(df_clean, forecast_df), use_container_width=True)
-            st.plotly_chart(plot_daily_bar_chart(df_clean), use_container_width=True)
+            st.session_state.show_charts = True
+
+        if st.session_state.show_charts:
+            st.plotly_chart(plot_forecast(st.session_state.forecast_df), use_container_width=True)
+            st.plotly_chart(plot_actual_vs_forecast(st.session_state.df_clean, st.session_state.forecast_df), use_container_width=True)
+            st.plotly_chart(plot_daily_bar_chart(st.session_state.df_clean), use_container_width=True)
             st.subheader("📋 Daily Forecast Table")
-            st.dataframe(generate_daily_table(forecast_df))
+            st.dataframe(generate_daily_table(st.session_state.forecast_df))
+
 else:
     st.info("👋 Upload a sales data file to begin.")
