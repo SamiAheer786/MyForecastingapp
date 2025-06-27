@@ -65,3 +65,4 @@ def generate_recommendations(analysis):
     if analysis['Projected % of Target'] >= 100:
         return "✅ You're on track to meet or exceed your target!"
     return f"🚀 You need to sell {analysis['Required per Day']} units/day to hit your goal."
+
