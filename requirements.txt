@@ -2,4 +2,4 @@ streamlit
 pandas
 prophet
 plotly
-
+openpyxl
