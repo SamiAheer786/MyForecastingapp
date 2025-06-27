@@ -1,6 +1,6 @@
 streamlit
 pandas
-prophet
-openpyxl
 plotly
+prophet
 statsmodels
+openpyxl
