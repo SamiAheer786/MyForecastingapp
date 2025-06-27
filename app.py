@@ -66,3 +66,4 @@ if data is not None:
         st.success(generate_recommendations(analysis))
 else:
     st.info("👋 Upload a file and start by selecting columns.")
+
