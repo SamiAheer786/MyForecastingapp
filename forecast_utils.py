@@ -21,13 +21,18 @@ def forecast_sales(df, model_type, target_mode):
     df_grouped = df_grouped.sort_values("ds")
 
     last_data_date = df_grouped['ds'].max()
-    today = pd.Timestamp.today()
-    if target_mode == "Monthly":
-        month_end = datetime(today.year, today.month, monthrange(today.year, today.month)[1])
-    else:
-        month_end = datetime(today.year, 12, 31)
 
-    forecast_days = (month_end - last_data_date).days
+    if target_mode == "Monthly":
+        # Forecast till end of the same month as the last data
+        year, month = last_data_date.year, last_data_date.month
+        end_date = datetime(year, month, monthrange(year, month)[1])
+    else:
+        # Forecast till end of year
+        end_date = datetime(last_data_date.year, 12, 31)
+
+    forecast_days = (end_date - last_data_date).days
+    if forecast_days <= 0:
+        return pd.DataFrame(), last_data_date, 0  # No days to forecast
 
     if model_type == "Prophet":
         model = Prophet(daily_seasonality=True)
@@ -110,7 +115,7 @@ def plot_daily_bar_chart(df):
 
 def generate_daily_table(forecast_df):
     return forecast_df[['ds', 'yhat']].rename(columns={'ds': 'Date', 'yhat': 'Forecasted Sales'}).round(2)
-    
+
 def get_forecast_explanation(method):
     explanations = {
         "Prophet": "Prophet models seasonality and trends to forecast future values.",
