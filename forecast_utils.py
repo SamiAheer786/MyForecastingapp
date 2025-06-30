@@ -110,3 +110,11 @@ def plot_daily_bar_chart(df):
 
 def generate_daily_table(forecast_df):
     return forecast_df[['ds', 'yhat']].rename(columns={'ds': 'Date', 'yhat': 'Forecasted Sales'}).round(2)
+    
+def get_forecast_explanation(method):
+    explanations = {
+        "Prophet": "Prophet models seasonality and trends to forecast future values.",
+        "Linear": "Linear regression fits a trend line using past data.",
+        "Exponential": "Exponential smoothing gives more weight to recent observations."
+    }
+    return explanations.get(method, "No explanation available.")
