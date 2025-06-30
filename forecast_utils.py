@@ -33,15 +33,13 @@ def forecast_sales(df, model_type, target_mode):
     forecast_days = (end_date - last_data_date).days
     if forecast_days <= 0:
         return pd.DataFrame(), last_data_date, 0  # No days to forecast
+
     if model_type == "Prophet":
-    model = Prophet(daily_seasonality=False, yearly_seasonality=False, weekly_seasonality=True)
-    model.add_seasonality(name='monthly', period=30.5, fourier_order=5)
-    model.fit(df_grouped)
-    future = model.make_future_dataframe(periods=forecast_days)
-    forecast = model.predict(future)
-    forecast = forecast[['ds', 'yhat', 'yhat_lower', 'yhat_upper']]
-    forecast['yhat'] = forecast['yhat'].clip(lower=0)
-    return forecast, last_data_date, forecast_days
+        model = Prophet(daily_seasonality=True)
+        model.fit(df_grouped)
+        future = model.make_future_dataframe(periods=forecast_days)
+        forecast = model.predict(future)
+        return forecast[['ds', 'yhat', 'yhat_lower', 'yhat_upper']], last_data_date, forecast_days
 
     elif model_type == "Linear":
         df_grouped['ds_ord'] = df_grouped['ds'].map(datetime.toordinal)
