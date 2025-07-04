@@ -1,11 +1,18 @@
+# forecast_utils.py
+
 import pandas as pd
-from datetime import datetime, timedelta
 from prophet import Prophet
 import plotly.graph_objects as go
 import plotly.express as px
+from datetime import datetime, timedelta
 from numpy import polyfit
 from statsmodels.tsa.holtwinters import ExponentialSmoothing
 from calendar import monthrange
+import os
+import joblib
+
+MODEL_PATH = "trained_model.pkl"
+DATA_PATH = "all_sales_data.csv"
 
 def preprocess_data(df, date_col, target_col, filters=[]):
     df = df[[date_col, target_col] + filters].copy()
@@ -15,24 +22,39 @@ def preprocess_data(df, date_col, target_col, filters=[]):
     df.dropna(subset=['date', 'target'], inplace=True)
     return df
 
+def update_master_data(new_df):
+    if os.path.exists(DATA_PATH):
+        old_df = pd.read_csv(DATA_PATH, parse_dates=['date'])
+        combined = pd.concat([old_df, new_df]).drop_duplicates(subset='date')
+    else:
+        combined = new_df
+    combined.to_csv(DATA_PATH, index=False)
+    return combined
+
+def train_and_save_model():
+    df = pd.read_csv(DATA_PATH, parse_dates=['date'])
+    df_grouped = df.groupby('date')['target'].sum().reset_index()
+    df_grouped.columns = ['ds', 'y']
+    model = Prophet(yearly_seasonality=True, daily_seasonality=False)
+    model.fit(df_grouped)
+    joblib.dump(model, MODEL_PATH)
+    return model, df_grouped
+
 def forecast_sales(df, model_type, target_mode):
     df_grouped = df.groupby("date")["target"].sum().reset_index()
     df_grouped.columns = ['ds', 'y']
     df_grouped = df_grouped.sort_values("ds")
-
     last_data_date = df_grouped['ds'].max()
 
     if target_mode == "Monthly":
-        # Forecast till end of the same month as the last data
         year, month = last_data_date.year, last_data_date.month
         end_date = datetime(year, month, monthrange(year, month)[1])
     else:
-        # Forecast till end of year
         end_date = datetime(last_data_date.year, 12, 31)
 
     forecast_days = (end_date - last_data_date).days
     if forecast_days <= 0:
-        return pd.DataFrame(), last_data_date, 0  # No days to forecast
+        return pd.DataFrame(), last_data_date, 0
 
     if model_type == "Prophet":
         model = Prophet(daily_seasonality=True)
