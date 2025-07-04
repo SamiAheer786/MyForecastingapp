@@ -1,86 +1,66 @@
-# forecast_utils.py
-
+import os
 import pandas as pd
 from prophet import Prophet
-import plotly.graph_objects as go
-import plotly.express as px
 from datetime import datetime, timedelta
+import joblib
 from numpy import polyfit
 from statsmodels.tsa.holtwinters import ExponentialSmoothing
 from calendar import monthrange
-import os
-import joblib
+import plotly.graph_objects as go
+import plotly.express as px
 
-MODEL_PATH = "trained_model.pkl"
-DATA_PATH = "all_sales_data.csv"
+MODEL_PATH = "model.pkl"
+DATA_PATH = "historical_data.csv"
 
-def preprocess_data(df, date_col, target_col, filters=[]):
-    df = df[[date_col, target_col] + filters].copy()
-    df.columns = ['date', 'target'] + filters
+def preprocess_data(df, date_col, target_col):
+    df = df[[date_col, target_col]].copy()
+    df.columns = ['date', 'target']
     df['date'] = pd.to_datetime(df['date'], errors='coerce')
     df['target'] = pd.to_numeric(df['target'], errors='coerce')
-    df.dropna(subset=['date', 'target'], inplace=True)
+    df.dropna(inplace=True)
     return df
 
-def update_master_data(new_df):
-    if os.path.exists(DATA_PATH):
-        old_df = pd.read_csv(DATA_PATH, parse_dates=['date'])
-        combined = pd.concat([old_df, new_df]).drop_duplicates(subset='date')
+def append_and_train(new_data, append=True):
+    if append and os.path.exists(DATA_PATH):
+        old_data = pd.read_csv(DATA_PATH, parse_dates=['date'])
+        full_data = pd.concat([old_data, new_data]).drop_duplicates(subset='date')
     else:
-        combined = new_df
-    combined.to_csv(DATA_PATH, index=False)
-    return combined
+        full_data = new_data
 
-def train_and_save_model():
-    df = pd.read_csv(DATA_PATH, parse_dates=['date'])
-    df_grouped = df.groupby('date')['target'].sum().reset_index()
-    df_grouped.columns = ['ds', 'y']
+    full_data.sort_values('date', inplace=True)
+    full_data.to_csv(DATA_PATH, index=False)
+
+    prophet_df = full_data.groupby('date')['target'].sum().reset_index()
+    prophet_df.columns = ['ds', 'y']
+
     model = Prophet(yearly_seasonality=True, daily_seasonality=False)
-    model.fit(df_grouped)
+    model.fit(prophet_df)
     joblib.dump(model, MODEL_PATH)
-    return model, df_grouped
 
-def forecast_sales(df, model_type, target_mode):
-    df_grouped = df.groupby("date")["target"].sum().reset_index()
-    df_grouped.columns = ['ds', 'y']
-    df_grouped = df_grouped.sort_values("ds")
-    last_data_date = df_grouped['ds'].max()
+    return model, full_data
 
-    if target_mode == "Monthly":
-        year, month = last_data_date.year, last_data_date.month
-        end_date = datetime(year, month, monthrange(year, month)[1])
+def load_trained_model():
+    if os.path.exists(MODEL_PATH):
+        model = joblib.load(MODEL_PATH)
+        data = pd.read_csv(DATA_PATH, parse_dates=['date'])
+        return model, data
     else:
-        end_date = datetime(last_data_date.year, 12, 31)
+        return None, None
 
-    forecast_days = (end_date - last_data_date).days
+def forecast_sales(model, last_date, target_mode):
+    if target_mode == "Monthly":
+        end_date = datetime(last_date.year, last_date.month, monthrange(last_date.year, last_date.month)[1])
+    else:
+        end_date = datetime(last_date.year, 12, 31)
+
+    forecast_days = (end_date - last_date).days
     if forecast_days <= 0:
-        return pd.DataFrame(), last_data_date, 0
+        return pd.DataFrame(), 0
 
-    if model_type == "Prophet":
-        model = Prophet(daily_seasonality=True)
-        model.fit(df_grouped)
-        future = model.make_future_dataframe(periods=forecast_days)
-        forecast = model.predict(future)
-        return forecast[['ds', 'yhat', 'yhat_lower', 'yhat_upper']], last_data_date, forecast_days
+    future = model.make_future_dataframe(periods=forecast_days)
+    forecast = model.predict(future)
 
-    elif model_type == "Linear":
-        df_grouped['ds_ord'] = df_grouped['ds'].map(datetime.toordinal)
-        m, b = polyfit(df_grouped['ds_ord'], df_grouped['y'], 1)
-        future_dates = pd.date_range(start=last_data_date + timedelta(1), periods=forecast_days)
-        forecast = pd.DataFrame({'ds': future_dates})
-        forecast['yhat'] = [m * d.toordinal() + b for d in forecast['ds']]
-        forecast['yhat_lower'] = forecast['yhat'] * 0.95
-        forecast['yhat_upper'] = forecast['yhat'] * 1.05
-        return forecast, last_data_date, forecast_days
-
-    elif model_type == "Exponential":
-        model = ExponentialSmoothing(df_grouped['y'], trend='add').fit()
-        forecast_vals = model.forecast(forecast_days)
-        future_dates = pd.date_range(start=last_data_date + timedelta(1), periods=forecast_days)
-        forecast = pd.DataFrame({'ds': future_dates, 'yhat': forecast_vals})
-        forecast['yhat_lower'] = forecast['yhat'] * 0.9
-        forecast['yhat_upper'] = forecast['yhat'] * 1.1
-        return forecast, last_data_date, forecast_days
+    return forecast[['ds', 'yhat', 'yhat_lower', 'yhat_upper']], forecast_days
 
 def calculate_target_analysis(df, forecast_df, last_date, target, mode):
     today = pd.Timestamp.today()
@@ -120,16 +100,6 @@ def plot_forecast(df):
     fig.update_layout(title="📈 Forecast with Confidence Bands", xaxis_title="Date", yaxis_title="Sales")
     return fig
 
-def plot_actual_vs_forecast(df, forecast_df):
-    actual = df.groupby('date')['target'].sum().reset_index()
-    actual.columns = ['ds', 'y']
-    merged = pd.merge(forecast_df[['ds', 'yhat']], actual, on='ds', how='left')
-    fig = go.Figure()
-    fig.add_trace(go.Scatter(x=merged['ds'], y=merged['yhat'], name='Forecast'))
-    fig.add_trace(go.Scatter(x=merged['ds'], y=merged['y'], name='Actual'))
-    fig.update_layout(title='📊 Actual vs Forecasted', xaxis_title='Date', yaxis_title='Sales')
-    return fig
-
 def plot_daily_bar_chart(df):
     daily = df.groupby('date')['target'].sum().reset_index()
     fig = px.bar(daily, x='date', y='target', title="📊 Daily Sales Trend")
@@ -138,10 +108,3 @@ def plot_daily_bar_chart(df):
 def generate_daily_table(forecast_df):
     return forecast_df[['ds', 'yhat']].rename(columns={'ds': 'Date', 'yhat': 'Forecasted Sales'}).round(2)
 
-def get_forecast_explanation(method):
-    explanations = {
-        "Prophet": "Prophet models seasonality and trends to forecast future values.",
-        "Linear": "Linear regression fits a trend line using past data.",
-        "Exponential": "Exponential smoothing gives more weight to recent observations."
-    }
-    return explanations.get(method, "No explanation available.")
