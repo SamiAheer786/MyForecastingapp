@@ -1,16 +1,15 @@
 import streamlit as st
 import pandas as pd
 from forecast_utils import (
-    preprocess_data, forecast_sales,
-    calculate_target_analysis, generate_recommendations,
+    preprocess_data, update_master_data, train_and_save_model,
+    forecast_sales, calculate_target_analysis, generate_recommendations,
     plot_forecast, plot_actual_vs_forecast,
-    plot_daily_bar_chart, generate_daily_table
+    plot_daily_bar_chart, generate_daily_table, get_forecast_explanation
 )
 
 st.set_page_config(page_title="📊 Smart Sales Forecast App", layout="wide")
 st.title("📊 Smart Sales Forecast & Target Tracker")
 
-# Initialize session state
 if 'forecast_ran' not in st.session_state:
     st.session_state.forecast_ran = False
 if 'show_charts' not in st.session_state:
@@ -22,7 +21,7 @@ if uploaded_file:
     df_raw = pd.read_csv(uploaded_file) if uploaded_file.name.endswith(".csv") else pd.read_excel(uploaded_file)
     df_raw.columns = df_raw.columns.str.lower().str.strip().str.replace(" ", "_").str.replace(r'[^\w\s]', '', regex=True)
 
-    st.success("✅ File uploaded!")
+    st.success("✅ File uploaded successfully!")
     if st.checkbox("👁️ Show Data Head"):
         st.dataframe(df_raw.head())
 
@@ -32,19 +31,23 @@ if uploaded_file:
 
     df_clean = preprocess_data(df_raw, date_col, target_col, filters)
 
+    if st.button("📦 Update Historical Data"):
+        all_data = update_master_data(df_clean)
+        st.success("📈 Historical data updated successfully.")
+        st.dataframe(all_data.tail())
+
+    if st.button("🧠 Train Model on Full History"):
+        model, history = train_and_save_model()
+        st.success("✅ Model trained successfully.")
+        st.line_chart(history.set_index("ds")["y"])
+
     st.markdown("## 🧠 Select Forecasting Method")
     model_choice = st.radio("Choose a method", ["Prophet", "Linear", "Exponential"])
-
-    seasonal_effect = st.radio("📅 Any Special Seasonal Effects?", ["No", "Yes"])
-    seasonal_dates = None
-    if seasonal_effect == "Yes":
-        st.warning("📌 Note: Dates selected will be considered high impact.")
-        seasonal_dates = st.date_input("Select seasonal dates", [])
+    st.caption(f"ℹ️ {get_forecast_explanation(model_choice)}")
 
     target_mode = st.radio("🎯 Target Period", ["Monthly", "Yearly"], horizontal=True)
-    target_value = st.number_input("🔢 Enter Your Sales Target", step=1000)
+    target_value = st.number_input("📌 Enter Your Sales Target", step=1000)
 
-    # Run Forecast Button
     if st.button("🚀 Run Forecast"):
         forecast_df, last_data_date, days_left = forecast_sales(df_clean, model_choice, target_mode)
         st.session_state.forecast_df = forecast_df
@@ -70,7 +73,6 @@ if uploaded_file:
 
         st.success(generate_recommendations(metrics))
 
-        # Charts Button
         if st.button("📈 Show Charts and Table"):
             st.session_state.show_charts = True
 
