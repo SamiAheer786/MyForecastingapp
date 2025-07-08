@@ -1,7 +1,6 @@
 streamlit
 pandas
-prophet
 plotly
-joblib
-openpyxl
+prophet
 statsmodels
+openpyxl
